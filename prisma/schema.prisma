@@ -1,0 +1,142 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String?  @unique
+  phone        String?  @unique
+  name         String   @default("")
+  passwordHash String   @default("")
+  dob                    DateTime?
+  gender                 String?
+  timeZone               String?
+  emailVerified          Boolean   @default(false)
+  emailVerificationToken String?
+  emailVerificationExpiry DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  profile       Profile?
+  metrics       Metric[]
+  goals         Goal[]
+  devices       Device[]
+  consents      Consent[]
+  auditLogs     AuditLog[]
+  refreshTokens RefreshToken[]
+  rating        Rating?
+  workouts      Workout[]
+}
+
+model Profile {
+  id             String  @id @default(uuid())
+  userId         String  @unique
+  height         Float?
+  baselineWeight Float?
+  bloodType      String?
+  medicalNotes   String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Metric {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String
+  value     Float
+  unit      String
+  timestamp DateTime
+  source    String   @default("manual")
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Goal {
+  id           String   @id @default(uuid())
+  userId       String
+  metricType   String
+  targetValue  Float
+  currentValue Float?
+  startDate    DateTime
+  endDate      DateTime
+  recurrence   String   @default("none")
+  status       String   @default("active")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Device {
+  id       String   @id @default(uuid())
+  userId   String
+  vendor   String
+  model    String
+  lastSync DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Consent {
+  id         String   @id @default(uuid())
+  userId     String
+  providerId String
+  scope      String
+  grantedAt  DateTime @default(now())
+  expiresAt  DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String
+  action    String
+  timestamp DateTime @default(now())
+  metadata  Json?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Workout {
+  id           String    @id @default(uuid())
+  userId       String
+  name         String
+  category     String
+  emoji        String    @default("🏋️")
+  exercises    Json      // Exercise[]
+  durationMins Int
+  caloriesBurned Int     @default(0)
+  scheduledAt  DateTime
+  completedAt  DateTime?
+  status       String    @default("scheduled") // scheduled | completed | skipped
+  createdAt    DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Rating {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  stars     Int      // 1–5
+  review    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
