@@ -190,8 +190,9 @@ export const phoneAuth = async (req: Request, res: Response): Promise<void> => {
   let decodedToken: admin.auth.DecodedIdToken;
   try {
     decodedToken = await admin.auth().verifyIdToken(id_token);
-  } catch {
-    res.status(401).json({ message: 'Invalid Firebase token' });
+  } catch (e) {
+    console.error('[phoneAuth] verifyIdToken failed:', e);
+    res.status(401).json({ message: 'Invalid Firebase token', detail: e instanceof Error ? e.message : String(e) });
     return;
   }
 
