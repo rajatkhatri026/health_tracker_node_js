@@ -1,0 +1,113 @@
+====================================================
+  NEXARA BACKEND — SETUP & RUN GUIDE
+  Stack: Node.js + Express + Prisma + Neon Postgres
+====================================================
+
+PREREQUISITES
+-------------
+- Node.js v18 or higher
+- npm v9 or higher
+- A Neon Postgres account (https://neon.tech) — free tier works
+- A Firebase project with Phone Authentication enabled
+
+
+STEP 1 — CLONE THE REPO
+------------------------
+  git clone https://github.com/rajatkhatri026/health_tracker_node_js.git
+  cd health_tracker_node_js
+
+
+STEP 2 — INSTALL DEPENDENCIES
+------------------------------
+  npm install
+
+
+STEP 3 — SET UP ENVIRONMENT VARIABLES
+--------------------------------------
+  Copy the example file:
+    cp .env.example .env
+
+  Fill in the values in .env:
+
+    DATABASE_URL
+      Your Neon Postgres connection string.
+      Get it from: Neon Console > Your Project > Connection Details
+      Example: postgresql://user:password@ep-xxx.us-east-1.aws.neon.tech/neondb?sslmode=require
+
+    JWT_SECRET
+      A long random string used to sign access tokens.
+      Generate one: node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+
+    JWT_REFRESH_SECRET
+      A separate long random string for refresh tokens.
+      Generate one: node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+
+    PORT
+      Port the server listens on. Default: 8080
+
+    CORS_ORIGINS
+      Comma-separated list of allowed frontend origins.
+      For development: http://localhost:8081,http://localhost:19006
+      Use * to allow all origins (dev only, never in production)
+
+    FIREBASE_PROJECT_ID
+      Your Firebase project ID.
+      Get it from: Firebase Console > Project Settings > General
+
+    FIREBASE_SERVICE_ACCOUNT_JSON (optional, production only)
+      Full JSON content of your Firebase service account key.
+      Get it from: Firebase Console > Project Settings > Service Accounts > Generate new private key
+      Leave empty for local development (the server uses project ID only in dev mode).
+
+
+STEP 4 — RUN DATABASE MIGRATIONS
+----------------------------------
+  npm run db:migrate
+
+  This creates all required tables in your Neon Postgres database.
+  If asked for a migration name, enter something like: init
+
+
+STEP 5 — START THE SERVER
+--------------------------
+  Development (with auto-reload):
+    npm run dev
+
+  Production:
+    npm run build
+    npm start
+
+  The server will start on http://0.0.0.0:8080
+  (accessible from physical devices on the same Wi-Fi)
+
+
+STEP 6 — VERIFY IT IS RUNNING
+------------------------------
+  Open in your browser or run:
+    curl http://localhost:8080/health
+
+  You should see a 200 response.
+
+
+PHYSICAL DEVICE ACCESS (iOS / Android)
+---------------------------------------
+  The server binds to 0.0.0.0 so your phone can reach it over Wi-Fi.
+  Find your Mac's local IP:
+    ipconfig getifaddr en0   (Mac)
+
+  Use that IP in the frontend .env:
+    EXPO_PUBLIC_API_BASE_URL=http://192.168.x.x:8080
+
+  Make sure your phone and Mac are on the same Wi-Fi network.
+
+
+AVAILABLE SCRIPTS
+-----------------
+  npm run dev          Start dev server with hot reload
+  npm run build        Compile TypeScript to dist/
+  npm start            Run compiled production build
+  npm run db:migrate   Run Prisma migrations
+  npm run db:generate  Regenerate Prisma client
+  npm run lint         Check for lint errors
+  npm run lint:fix     Auto-fix lint errors
+  npm run format       Format all files with Prettier
