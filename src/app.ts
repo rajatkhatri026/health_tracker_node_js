@@ -16,21 +16,27 @@ import stepsRoutes from './routes/steps.routes';
 const app = express();
 
 app.use(helmet());
-const allowedOrigins = [
-  process.env.FRONTEND_URL || 'http://localhost:5173',
-  'http://localhost:8081',
-  'http://localhost:19006',
-];
-app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error(`CORS: origin ${origin} not allowed`));
-    }
-  },
-  credentials: true,
-}));
+
+// CORS allow-list is configurable via CORS_ORIGINS (comma-separated) in .env.
+// Use "*" to allow all origins (dev only). Requests without an Origin header
+// (native mobile apps, curl, server-to-server) are always allowed — CORS is
+// a browser-only protection.
+const allowedOrigins = (process.env.CORS_ORIGINS ?? '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes('*')) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      return callback(new Error(`CORS: origin ${origin} not allowed`));
+    },
+    credentials: true,
+  })
+);
 app.use(express.json());
 
 app.use('/auth', authRoutes);
