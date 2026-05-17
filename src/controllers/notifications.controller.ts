@@ -7,7 +7,7 @@ const createSchema = z.object({
   type: z.enum(['reminder', 'summary', 'goal', 'streak', 'system']),
   title: z.string().min(1).max(120),
   body: z.string().min(1).max(500),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 const fmt = (n: {
@@ -69,7 +69,7 @@ export const createNotification = async (req: AuthRequest, res: Response): Promi
       type: parsed.data.type,
       title: parsed.data.title,
       body: parsed.data.body,
-      metadata: parsed.data.metadata ?? undefined,
+      metadata: parsed.data.metadata ? (parsed.data.metadata as object) : undefined,
     },
   });
 
@@ -81,10 +81,10 @@ export const markRead = async (req: AuthRequest, res: Response): Promise<void> =
   const { user_id, notif_id } = req.params;
   if (req.userId !== user_id) { res.status(403).json({ message: 'Forbidden' }); return; }
 
-  const existing = await prisma.notification.findFirst({ where: { id: notif_id, userId: user_id } });
+  const existing = await prisma.notification.findFirst({ where: { id: String(notif_id), userId: String(user_id) } });
   if (!existing) { res.status(404).json({ message: 'Not found' }); return; }
 
-  const updated = await prisma.notification.update({ where: { id: notif_id }, data: { read: true } });
+  const updated = await prisma.notification.update({ where: { id: String(notif_id) }, data: { read: true } });
   res.json(fmt(updated));
 };
 
@@ -104,10 +104,10 @@ export const deleteNotification = async (req: AuthRequest, res: Response): Promi
   const { user_id, notif_id } = req.params;
   if (req.userId !== user_id) { res.status(403).json({ message: 'Forbidden' }); return; }
 
-  const existing = await prisma.notification.findFirst({ where: { id: notif_id, userId: user_id } });
+  const existing = await prisma.notification.findFirst({ where: { id: String(notif_id), userId: String(user_id) } });
   if (!existing) { res.status(404).json({ message: 'Not found' }); return; }
 
-  await prisma.notification.delete({ where: { id: notif_id } });
+  await prisma.notification.delete({ where: { id: String(notif_id) } });
   res.status(204).send();
 };
 

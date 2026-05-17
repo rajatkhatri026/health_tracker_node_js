@@ -36,7 +36,7 @@ export const notify = (
 ): void => {
   (async () => {
     try {
-      await prisma.notification.create({ data: { userId, type, title, body, metadata } });
+      await prisma.notification.create({ data: { userId, type, title, body, metadata: metadata as object | undefined } });
       const token = await getPushToken(userId);
       if (token) await sendExpoPush(token, title, body);
     } catch {
@@ -62,7 +62,7 @@ export const notifyOnce = async (
       where: { userId, title, createdAt: { gte: since } },
     });
     if (existing) return;
-    await prisma.notification.create({ data: { userId, type, title, body, metadata } });
+    await prisma.notification.create({ data: { userId, type, title, body, metadata: metadata as object | undefined } });
     const token = await getPushToken(userId);
     if (token) await sendExpoPush(token, title, body);
   } catch {

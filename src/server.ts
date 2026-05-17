@@ -25,7 +25,7 @@ async function main() {
         const listener = await ngrok.connect({
           addr: PORT,
           authtoken: process.env.NGROK_AUTHTOKEN,
-          pooling_enabled: true,
+
         });
         console.log(`\nNgrok tunnel active: ${listener.url()}`);
         console.log(`Set in React Native .env: EXPO_PUBLIC_API_BASE_URL=${listener.url()}\n`);
