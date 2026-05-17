@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { z } from 'zod';
 import prisma from '../utils/prisma';
 import { AuthRequest } from '../middleware/auth';
+import { notifyOnce } from '../utils/notify';
 
 const createMetricSchema = z.object({
   type: z.string().min(1),
@@ -32,6 +33,8 @@ export const getMetrics = async (req: AuthRequest, res: Response): Promise<void>
     where,
     orderBy: { timestamp: 'desc' },
   });
+
+  await prisma.auditLog.create({ data: { userId: user_id, action: 'phi.metrics.read' } });
 
   res.json(
     metrics.map((m) => ({
@@ -64,6 +67,17 @@ export const createMetric = async (req: AuthRequest, res: Response): Promise<voi
     data: { userId: user_id, type, value, unit, timestamp: new Date(timestamp), source },
   });
 
+  await prisma.auditLog.create({ data: { userId: user_id, action: 'phi.metrics.create', metadata: { type } } });
+
+  // Sleep logged → send summary
+  if (type === 'sleep') {
+    const hrs = (value / 60).toFixed(1);
+    const quality = value >= 480 ? 'Great' : value >= 360 ? 'Good' : 'Low';
+    notifyOnce(user_id, 'summary', `😴 Sleep Logged: ${hrs}h`,
+      `${quality} rest! ${value >= 420 ? "You're recovering well." : 'Try to aim for 7–8 hours tonight.'}`,
+      480, { hours: hrs, quality });
+  }
+
   res.status(201).json({ metric_id: metric.id, status: 'created' });
 };
 
@@ -82,5 +96,6 @@ export const deleteMetric = async (req: AuthRequest, res: Response): Promise<voi
   }
 
   await prisma.metric.delete({ where: { id: metric_id } });
+  await prisma.auditLog.create({ data: { userId: user_id, action: 'phi.metrics.delete', metadata: { metric_id } } });
   res.status(204).send();
 };

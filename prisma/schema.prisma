@@ -8,16 +8,21 @@ datasource db {
 
 model User {
   id           String   @id @default(uuid())
-  email        String?  @unique
-  phone        String?  @unique
-  name         String   @default("")
+  // Encrypted PHI fields (AES-256-GCM via phi-crypto.ts)
+  email        String?  // encrypted ciphertext
+  phone        String?  // encrypted ciphertext
+  name         String   @default("") // encrypted ciphertext
+  dob          String?  // encrypted ciphertext (stored as ISO string)
+  // Deterministic HMAC-SHA256 hashes for DB lookups (never decrypt — lookup only)
+  emailHash    String?  @unique
+  phoneHash    String?  @unique
   passwordHash String   @default("")
-  dob                    DateTime?
   gender                 String?
   timeZone               String?
   emailVerified          Boolean   @default(false)
   emailVerificationToken String?
   emailVerificationExpiry DateTime?
+  pushToken              String?   // Expo push token for native notifications
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
 
@@ -30,6 +35,7 @@ model User {
   refreshTokens RefreshToken[]
   rating        Rating?
   workouts      Workout[]
+  notifications Notification[]
 }
 
 model Profile {
@@ -39,6 +45,7 @@ model Profile {
   baselineWeight Float?
   bloodType      String?
   medicalNotes   String?
+  avatarUrl      String? // base64 data URI or external URL
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -83,12 +90,15 @@ model Device {
 }
 
 model Consent {
-  id         String   @id @default(uuid())
-  userId     String
-  providerId String
-  scope      String
-  grantedAt  DateTime @default(now())
-  expiresAt  DateTime
+  id             String    @id @default(uuid())
+  userId         String
+  providerId     String
+  scope          String
+  purpose        String    @default("health_tracking")
+  dataCategories String[]  @default([])
+  grantedAt      DateTime  @default(now())
+  expiresAt      DateTime
+  revokedAt      DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -139,4 +149,32 @@ model Rating {
   updatedAt DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String   // 'reminder' | 'summary' | 'goal' | 'streak' | 'system'
+  title     String
+  body      String
+  read      Boolean  @default(false)
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+model OtpCode {
+  id        String   @id @default(uuid())
+  phone     String   // encrypted ciphertext — kept for SMS delivery
+  phoneHash String   // HMAC-SHA256 for lookups
+  codeHash  String
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  consumed  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([phoneHash])
 }

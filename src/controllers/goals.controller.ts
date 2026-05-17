@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { z } from 'zod';
 import prisma from '../utils/prisma';
 import { AuthRequest } from '../middleware/auth';
+import { notify } from '../utils/notify';
 
 const createGoalSchema = z.object({
   metric_type: z.string().min(1),
@@ -41,6 +42,7 @@ export const getGoals = async (req: AuthRequest, res: Response): Promise<void> =
     orderBy: { createdAt: 'desc' },
   });
 
+  await prisma.auditLog.create({ data: { userId: user_id, action: 'phi.goals.read' } });
   res.json(goals.map(formatGoal));
 };
 
@@ -68,6 +70,13 @@ export const createGoal = async (req: AuthRequest, res: Response): Promise<void>
       recurrence,
     },
   });
+
+  await prisma.auditLog.create({ data: { userId: user_id, action: 'phi.goals.create' } });
+
+  const metricLabel = metric_type.replace(/_/g, ' ');
+  notify(user_id, 'goal', `🎯 New Goal Set: ${metricLabel}`,
+    `Target: ${target_value} — You've got this! Track your progress on the Goals screen.`,
+    { goal_id: goal.id, metric_type, target_value });
 
   res.status(201).json({ goal_id: goal.id, status: 'created' });
 };
@@ -122,5 +131,6 @@ export const deleteGoal = async (req: AuthRequest, res: Response): Promise<void>
   }
 
   await prisma.goal.delete({ where: { id: goal_id } });
+  await prisma.auditLog.create({ data: { userId: user_id, action: 'phi.goals.delete', metadata: { goal_id } } });
   res.status(204).send();
 };

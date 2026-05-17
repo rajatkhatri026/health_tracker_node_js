@@ -11,7 +11,8 @@ const transporter = nodemailer.createTransport({
 });
 
 export const sendVerificationEmail = async (to: string, token: string, userId: string) => {
-  const link = `http://localhost:8080/auth/verify-email?token=${token}&userId=${userId}`;
+  const baseUrl = process.env.API_BASE_URL ?? 'http://localhost:8080';
+  const link = `${baseUrl}/auth/verify-email?token=${token}&userId=${userId}`;
 
   await transporter.sendMail({
     from: `"HealthTracker" <${process.env.GMAIL_USER}>`,

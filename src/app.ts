@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import { authMiddleware } from './middleware/auth';
 import { errorHandler } from './middleware/errorHandler';
 import authRoutes from './routes/auth.routes';
@@ -12,10 +13,35 @@ import statsRoutes from './routes/stats.routes';
 import ratingRoutes from './routes/rating.routes';
 import workoutRoutes from './routes/workout.routes';
 import stepsRoutes from './routes/steps.routes';
+import waterRoutes from './routes/water.routes';
+import notificationsRoutes from './routes/notifications.routes';
+import aiRoutes from './routes/ai.routes';
 
 const app = express();
 
+// Trust the first proxy (ngrok, load balancer, etc.) so that
+// express-rate-limit can correctly read the real client IP from X-Forwarded-For.
+app.set('trust proxy', 1);
+
 app.use(helmet());
+
+// Global rate limit — 100 requests per 15 minutes per IP
+app.use(rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many requests, please try again later.' },
+}));
+
+// Stricter limit on auth routes — 20 requests per 15 minutes
+app.use('/auth', rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many auth attempts, please try again later.' },
+}));
 
 // CORS allow-list is configurable via CORS_ORIGINS (comma-separated) in .env.
 // Use "*" to allow all origins (dev only). Requests without an Origin header
@@ -32,12 +58,17 @@ app.use(
       if (!origin) return callback(null, true);
       if (allowedOrigins.includes('*')) return callback(null, true);
       if (allowedOrigins.includes(origin)) return callback(null, true);
+      if (/\.ngrok-free\.(app|dev)$/.test(origin)) return callback(null, true);
       return callback(new Error(`CORS: origin ${origin} not allowed`));
     },
     credentials: true,
+    optionsSuccessStatus: 200,
   })
 );
-app.use(express.json());
+
+// Handle preflight for all routes
+app.options(/.*/, cors());
+app.use(express.json({ limit: '2mb' })); // allow base64 avatar uploads (~700KB)
 
 app.use('/auth', authRoutes);
 
@@ -52,6 +83,9 @@ app.get('/users/:user_id/export', authMiddleware, (req, res, next) => {
 });
 
 app.use('/users/:user_id/steps', stepsRoutes);
+app.use('/users/:user_id/water', authMiddleware, waterRoutes);
+app.use('/users/:user_id/notifications', authMiddleware, notificationsRoutes);
+app.use('/users/:user_id/ai', authMiddleware, aiRoutes);
 app.use('/stats', statsRoutes);
 app.use('/ratings', ratingRoutes);
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));

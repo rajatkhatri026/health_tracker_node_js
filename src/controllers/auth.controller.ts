@@ -7,6 +7,7 @@ import { AuthRequest } from '../middleware/auth';
 import admin from '../utils/firebase';
 import { sendVerificationEmail } from '../utils/mailer';
 import crypto from 'crypto';
+import { encryptPHI, decryptIfPresent, hmacHash } from '../utils/phi-crypto';
 
 const registerSchema = z.object({
   name: z.string().min(1),
@@ -27,7 +28,8 @@ export const register = async (req: Request, res: Response): Promise<void> => {
   }
 
   const { name, email, password } = parsed.data;
-  const existing = await prisma.user.findUnique({ where: { email } });
+  const emailH = hmacHash(email);
+  const existing = await prisma.user.findUnique({ where: { emailHash: emailH } });
   if (existing) {
     res.status(409).json({ message: 'Email already registered' });
     return;
@@ -35,7 +37,12 @@ export const register = async (req: Request, res: Response): Promise<void> => {
 
   const passwordHash = await bcrypt.hash(password, 10);
   const user = await prisma.user.create({
-    data: { name, email, passwordHash },
+    data: {
+      name: encryptPHI(name),
+      email: encryptPHI(email),
+      emailHash: emailH,
+      passwordHash,
+    },
   });
 
   await prisma.auditLog.create({
@@ -53,7 +60,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
   }
 
   const { email, password } = parsed.data;
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await prisma.user.findUnique({ where: { emailHash: hmacHash(email) } });
   if (!user) {
     res.status(401).json({ message: 'Invalid email or password' });
     return;
@@ -66,14 +73,15 @@ export const login = async (req: Request, res: Response): Promise<void> => {
   }
 
   const payload = { userId: user.id, email: user.email ?? '' };
-  const accessToken = signAccessToken(payload);
+  const accessToken  = signAccessToken(payload);
   const refreshToken = signRefreshToken(payload);
+  const tokenHash    = crypto.createHash('sha256').update(refreshToken).digest('hex');
 
   await prisma.refreshToken.create({
     data: {
       userId: user.id,
-      token: refreshToken,
-      expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+      token: tokenHash,
+      expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
     },
   });
 
@@ -96,23 +104,25 @@ export const refresh = async (req: Request, res: Response): Promise<void> => {
   }
 
   try {
-    const payload = verifyRefreshToken(refresh_token);
-    const stored = await prisma.refreshToken.findUnique({ where: { token: refresh_token } });
+    const payload   = verifyRefreshToken(refresh_token);
+    const tokenHash = crypto.createHash('sha256').update(refresh_token).digest('hex');
+    const stored    = await prisma.refreshToken.findUnique({ where: { token: tokenHash } });
     if (!stored || stored.expiresAt < new Date()) {
       res.status(401).json({ message: 'Invalid or expired refresh token' });
       return;
     }
 
-    await prisma.refreshToken.delete({ where: { token: refresh_token } });
+    await prisma.refreshToken.delete({ where: { token: tokenHash } });
 
-    const newAccessToken = signAccessToken({ userId: payload.userId, email: payload.email });
+    const newAccessToken  = signAccessToken({ userId: payload.userId, email: payload.email });
     const newRefreshToken = signRefreshToken({ userId: payload.userId, email: payload.email });
+    const newTokenHash    = crypto.createHash('sha256').update(newRefreshToken).digest('hex');
 
     await prisma.refreshToken.create({
       data: {
         userId: payload.userId,
-        token: newRefreshToken,
-        expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+        token: newTokenHash,
+        expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
       },
     });
 
@@ -137,15 +147,17 @@ export const sendEmailVerification = async (req: AuthRequest, res: Response): Pr
     return;
   }
 
-  const token = crypto.randomBytes(32).toString('hex');
+  const rawToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
   const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
   await prisma.user.update({
     where: { id: req.userId },
-    data: { emailVerificationToken: token, emailVerificationExpiry: expiry },
+    data: { emailVerificationToken: tokenHash, emailVerificationExpiry: expiry },
   });
 
-  await sendVerificationEmail(user.email, token, user.id);
+  const plainEmail = decryptIfPresent(user.email) ?? '';
+  await sendVerificationEmail(plainEmail, rawToken, user.id);
   res.json({ message: 'Verification email sent' });
 };
 
@@ -156,10 +168,11 @@ export const verifyEmail = async (req: Request, res: Response): Promise<void> =>
     return;
   }
 
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (
     !user ||
-    user.emailVerificationToken !== token ||
+    user.emailVerificationToken !== tokenHash ||
     !user.emailVerificationExpiry ||
     user.emailVerificationExpiry < new Date()
   ) {
@@ -191,8 +204,8 @@ export const phoneAuth = async (req: Request, res: Response): Promise<void> => {
   try {
     decodedToken = await admin.auth().verifyIdToken(id_token);
   } catch (e) {
-    console.error('[phoneAuth] verifyIdToken failed:', e);
-    res.status(401).json({ message: 'Invalid Firebase token', detail: e instanceof Error ? e.message : String(e) });
+    console.error('[phoneAuth] verifyIdToken failed:', e instanceof Error ? e.message : String(e));
+    res.status(401).json({ message: 'Invalid Firebase token' });
     return;
   }
 
@@ -202,12 +215,13 @@ export const phoneAuth = async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
-  let user = await prisma.user.findUnique({ where: { phone } });
+  const phoneH = hmacHash(phone);
+  let user = await prisma.user.findUnique({ where: { phoneHash: phoneH } });
   const isNewUser = !user;
 
   if (!user) {
     user = await prisma.user.create({
-      data: { phone, name: '', passwordHash: '' },
+      data: { phone: encryptPHI(phone), phoneHash: phoneH, name: '', passwordHash: '' },
     });
     await prisma.auditLog.create({
       data: { userId: user.id, action: 'user.register.phone' },
@@ -218,16 +232,21 @@ export const phoneAuth = async (req: Request, res: Response): Promise<void> => {
     });
   }
 
-  const payload = { userId: user.id, email: user.email ?? '' };
-  const accessToken = signAccessToken(payload);
+  const payload      = { userId: user.id, email: user.email ?? '' };
+  const accessToken  = signAccessToken(payload);
   const refreshToken = signRefreshToken(payload);
+  const tokenHash    = crypto.createHash('sha256').update(refreshToken).digest('hex');
 
   await prisma.refreshToken.create({
     data: {
       userId: user.id,
-      token: refreshToken,
-      expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+      token: tokenHash,
+      expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
     },
+  });
+
+  await prisma.auditLog.create({
+    data: { userId: user.id, action: isNewUser ? 'user.register.phone' : 'user.login.phone' },
   });
 
   res.json({
@@ -249,11 +268,11 @@ export const getMe = async (req: AuthRequest, res: Response): Promise<void> => {
   }
   res.json({
     user_id: user.id,
-    name: user.name,
-    email: user.email,
-    phone: user.phone,
-    dob: user.dob,
-    gender: user.gender,
+    name:     decryptIfPresent(user.name) ?? '',
+    email:    decryptIfPresent(user.email),
+    phone:    decryptIfPresent(user.phone),
+    dob:      decryptIfPresent(user.dob),
+    gender:   user.gender,
     time_zone: user.timeZone,
   });
 };

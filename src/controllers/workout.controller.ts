@@ -3,6 +3,10 @@ import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import prisma from '../utils/prisma';
 import { AuthRequest } from '../middleware/auth';
+import { notify } from '../utils/notify';
+
+const auditPHI = (userId: string, action: string, metadata?: object) =>
+  prisma.auditLog.create({ data: { userId, action, ...(metadata ? { metadata } : {}) } }).catch(() => {});
 
 const exerciseSchema = z.object({
   id: z.string().optional(),
@@ -46,6 +50,7 @@ export const getWorkouts = async (req: AuthRequest, res: Response) => {
       take: parseInt(limit),
       skip: parseInt(offset),
     });
+    auditPHI(req.params.user_id as string, 'phi.workouts.read');
     res.json(workouts);
   } catch (e: any) {
     res.status(500).json({ message: e?.message ?? 'Failed to fetch workouts' });
@@ -68,6 +73,13 @@ export const createWorkout = async (req: AuthRequest, res: Response) => {
         scheduledAt,
       },
     });
+    auditPHI(userId, 'phi.workouts.create');
+
+    const when = new Date(scheduledAt).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+    notify(userId, 'reminder', `${workout.emoji} Workout Scheduled: ${name}`,
+      `${durationMins} min ${category} session on ${when}. Ready to train? 💪`,
+      { workoutId: workout.id });
+
     res.status(201).json(workout);
   } catch (e: any) {
     res.status(500).json({ message: e?.message ?? 'Failed to create workout' });
@@ -136,6 +148,11 @@ export const completeWorkout = async (req: AuthRequest, res: Response) => {
     await prisma.metric.create({
       data: { userId, type: 'activity', value: durationMins, unit: 'mins', timestamp: new Date(), source: 'manual' },
     });
+
+    notify(userId, 'summary', `🏋️ Workout Complete: ${workout.name}`,
+      `You crushed ${durationMins} mins${caloriesBurned ? ` and burned ${caloriesBurned} kcal` : ''}. Great work! 💪`,
+      { workoutId, durationMins, caloriesBurned });
+
     res.json(workout);
   } catch (e: any) {
     res.status(500).json({ message: e?.message ?? 'Failed to complete workout' });
