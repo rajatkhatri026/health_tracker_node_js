@@ -216,14 +216,14 @@ export const phoneAuth = async (req: Request, res: Response): Promise<void> => {
   }
 
   const phoneH = hmacHash(phone);
-  const existingPhone = await prisma.user.findUnique({ where: { phoneHash: phoneH }, select: { id: true } });
-  const isNewUser = !existingPhone;
+  let user = await prisma.user.findUnique({ where: { phoneHash: phoneH } });
+  const isNewUser = !user;
 
-  const user = await prisma.user.upsert({
-    where:  { phoneHash: phoneH },
-    update: {},
-    create: { phone: encryptPHI(phone), phoneHash: phoneH, name: '', passwordHash: '' },
-  });
+  if (!user) {
+    user = await prisma.user.create({
+      data: { phone: encryptPHI(phone), phoneHash: phoneH, name: '', passwordHash: '' },
+    });
+  }
 
   prisma.auditLog.create({
     data: { userId: user.id, action: isNewUser ? 'user.register.phone' : 'user.login.phone' },
@@ -289,21 +289,20 @@ export const socialAuth = async (req: Request, res: Response): Promise<void> => 
 
   const emailH = hmacHash(email);
 
-  // Single upsert — avoids 2 round trips (find + create) under high concurrency
-  const existing = await prisma.user.findUnique({ where: { emailHash: emailH }, select: { id: true } });
-  const isNewUser = !existing;
+  let user = await prisma.user.findUnique({ where: { emailHash: emailH } });
+  const isNewUser = !user;
 
-  const user = await prisma.user.upsert({
-    where:  { emailHash: emailH },
-    update: {}, // existing users — nothing to update
-    create: {
-      email:         encryptPHI(email),
-      emailHash:     emailH,
-      name:          encryptPHI(name),
-      passwordHash:  '',
-      emailVerified: true,
-    },
-  });
+  if (!user) {
+    user = await prisma.user.create({
+      data: {
+        email:         encryptPHI(email),
+        emailHash:     emailH,
+        name:          encryptPHI(name),
+        passwordHash:  '',
+        emailVerified: true,
+      },
+    });
+  }
 
   // Audit log fire-and-forget — never blocks the login response
   prisma.auditLog.create({
