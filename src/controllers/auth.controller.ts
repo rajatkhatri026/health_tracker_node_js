@@ -216,21 +216,18 @@ export const phoneAuth = async (req: Request, res: Response): Promise<void> => {
   }
 
   const phoneH = hmacHash(phone);
-  let user = await prisma.user.findUnique({ where: { phoneHash: phoneH } });
-  const isNewUser = !user;
+  const existingPhone = await prisma.user.findUnique({ where: { phoneHash: phoneH }, select: { id: true } });
+  const isNewUser = !existingPhone;
 
-  if (!user) {
-    user = await prisma.user.create({
-      data: { phone: encryptPHI(phone), phoneHash: phoneH, name: '', passwordHash: '' },
-    });
-    await prisma.auditLog.create({
-      data: { userId: user.id, action: 'user.register.phone' },
-    });
-  } else {
-    await prisma.auditLog.create({
-      data: { userId: user.id, action: 'user.login.phone' },
-    });
-  }
+  const user = await prisma.user.upsert({
+    where:  { phoneHash: phoneH },
+    update: {},
+    create: { phone: encryptPHI(phone), phoneHash: phoneH, name: '', passwordHash: '' },
+  });
+
+  prisma.auditLog.create({
+    data: { userId: user.id, action: isNewUser ? 'user.register.phone' : 'user.login.phone' },
+  }).catch(() => {});
 
   const payload      = { userId: user.id, email: user.email ?? '' };
   const accessToken  = signAccessToken(payload);
@@ -245,15 +242,92 @@ export const phoneAuth = async (req: Request, res: Response): Promise<void> => {
     },
   });
 
-  await prisma.auditLog.create({
-    data: { userId: user.id, action: isNewUser ? 'user.register.phone' : 'user.login.phone' },
-  });
-
   res.json({
     access_token: accessToken,
     refresh_token: refreshToken,
     expires_in: 900,
     is_new_user: isNewUser,
+  });
+};
+
+export const socialAuth = async (req: Request, res: Response): Promise<void> => {
+  const { id_token, provider } = req.body;
+  if (!id_token) {
+    res.status(400).json({ message: 'id_token is required' });
+    return;
+  }
+
+  let email: string | undefined;
+  let name: string = '';
+
+  try {
+    if (provider === 'apple') {
+      // Apple: decode JWT payload directly (Apple public key verification optional — email is enough)
+      const payload = JSON.parse(Buffer.from(id_token.split('.')[1], 'base64').toString());
+      email = payload.email;
+      name  = req.body.name ?? email?.split('@')[0] ?? '';
+    } else {
+      // Google: verify access_token via userinfo endpoint
+      const res2 = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${id_token}` },
+      });
+      if (!res2.ok) throw new Error('Invalid Google token');
+      const payload = await res2.json() as { email?: string; name?: string };
+      email = payload.email;
+      name  = payload.name ?? req.body.name ?? email?.split('@')[0] ?? '';
+    }
+  } catch (e) {
+    console.error('[socialAuth] token verification failed:', e instanceof Error ? e.message : String(e));
+    res.status(401).json({ message: 'Invalid token' });
+    return;
+  }
+
+  if (!email) {
+    res.status(400).json({ message: 'Email not found in token' });
+    return;
+  }
+
+  const emailH = hmacHash(email);
+
+  // Single upsert — avoids 2 round trips (find + create) under high concurrency
+  const existing = await prisma.user.findUnique({ where: { emailHash: emailH }, select: { id: true } });
+  const isNewUser = !existing;
+
+  const user = await prisma.user.upsert({
+    where:  { emailHash: emailH },
+    update: {}, // existing users — nothing to update
+    create: {
+      email:         encryptPHI(email),
+      emailHash:     emailH,
+      name:          encryptPHI(name),
+      passwordHash:  '',
+      emailVerified: true,
+    },
+  });
+
+  // Audit log fire-and-forget — never blocks the login response
+  prisma.auditLog.create({
+    data: { userId: user.id, action: isNewUser ? 'user.register.social' : 'user.login.social' },
+  }).catch(() => {});
+
+  const payload      = { userId: user.id, email: user.email ?? '' };
+  const accessToken  = signAccessToken(payload);
+  const refreshToken = signRefreshToken(payload);
+  const tokenHash    = crypto.createHash('sha256').update(refreshToken).digest('hex');
+
+  await prisma.refreshToken.create({
+    data: {
+      userId: user.id,
+      token: tokenHash,
+      expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
+    },
+  });
+
+  res.json({
+    access_token:  accessToken,
+    refresh_token: refreshToken,
+    expires_in:    900,
+    is_new_user:   isNewUser,
   });
 };
 

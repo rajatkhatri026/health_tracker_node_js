@@ -1,10 +1,11 @@
 import { Router } from 'express';
-import { register, login, refresh, getMe, phoneAuth, sendEmailVerification, verifyEmail } from '../controllers/auth.controller';
+import { register, login, refresh, getMe, phoneAuth, socialAuth, sendEmailVerification, verifyEmail } from '../controllers/auth.controller';
 import { sendOtp, verifyOtp } from '../controllers/otp.controller';
 import { authMiddleware } from '../middleware/auth';
 
 const router = Router();
 
+router.post('/social', socialAuth);
 router.post('/phone', phoneAuth);
 router.post('/otp/send', sendOtp);
 router.post('/otp/verify', verifyOtp);

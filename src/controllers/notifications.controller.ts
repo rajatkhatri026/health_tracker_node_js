@@ -2,6 +2,8 @@ import { Response } from 'express';
 import { z } from 'zod';
 import prisma from '../utils/prisma';
 import { AuthRequest } from '../middleware/auth';
+import { sendExpoPush } from '../utils/expoPush';
+import { Response } from 'express';
 
 const createSchema = z.object({
   type: z.enum(['reminder', 'summary', 'goal', 'streak', 'system']),
@@ -72,6 +74,22 @@ export const createNotification = async (req: AuthRequest, res: Response): Promi
       metadata: parsed.data.metadata ? (parsed.data.metadata as object) : undefined,
     },
   });
+
+  // Also push to phone — fetch user's Expo push token
+  const userRecord = await prisma.user.findUnique({ where: { id: user_id }, select: { pushToken: true } });
+  if (userRecord?.pushToken) {
+    const meta = parsed.data.metadata ?? {};
+    // Skip phone push for alarm-sourced notifications (device already fired them locally)
+    const isAlarmSource = (meta as Record<string, unknown>).source === 'alarm';
+    if (!isAlarmSource) {
+      await sendExpoPush({
+        to:    userRecord.pushToken,
+        title: parsed.data.title,
+        body:  parsed.data.body,
+        data:  { notifId: notif.id, type: parsed.data.type, ...(meta as Record<string, unknown>) },
+      });
+    }
+  }
 
   res.status(201).json(fmt(notif));
 };

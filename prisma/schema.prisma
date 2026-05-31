@@ -36,6 +36,7 @@ model User {
   rating        Rating?
   workouts      Workout[]
   notifications Notification[]
+  subscription  Subscription?
 }
 
 model Profile {
@@ -164,6 +165,43 @@ model Notification {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt(sort: Desc)])
+}
+
+model Subscription {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  plan        String   // 'trial' | 'monthly' | 'yearly'
+  status      String   @default("active") // 'active' | 'expired' | 'cancelled'
+  startedAt   DateTime @default(now())
+  expiresAt   DateTime
+  // For weekly plan rotation — which week variant the user is on
+  planWeekOffset Int   @default(0)
+  // Streak tracking
+  currentStreak  Int   @default(0)
+  longestStreak  Int   @default(0)
+  lastCheckinAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  checkins    WeeklyCheckin[]
+}
+
+model WeeklyCheckin {
+  id             String   @id @default(uuid())
+  userId         String
+  subscriptionId String
+  weekNumber     Int      // ISO week number
+  year           Int
+  weightKg       Float?
+  mealAdherence  Int      @default(0) // 0–7 days followed
+  notes          String?
+  createdAt      DateTime @default(now())
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, weekNumber, year])
+  @@index([userId])
 }
 
 model OtpCode {

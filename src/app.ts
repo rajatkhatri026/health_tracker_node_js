@@ -16,6 +16,9 @@ import stepsRoutes from './routes/steps.routes';
 import waterRoutes from './routes/water.routes';
 import notificationsRoutes from './routes/notifications.routes';
 import aiRoutes from './routes/ai.routes';
+import nutritionRoutes from './routes/nutrition.routes';
+import subscriptionRoutes from './routes/subscription.routes';
+import paymentRoutes, { stripeWebhookRouter } from './routes/payment.routes';
 
 const app = express();
 
@@ -88,6 +91,11 @@ app.use('/users/:user_id/notifications', authMiddleware, notificationsRoutes);
 app.use('/users/:user_id/ai', authMiddleware, aiRoutes);
 app.use('/stats', statsRoutes);
 app.use('/ratings', ratingRoutes);
+app.use('/nutrition', nutritionRoutes);
+app.use('/users/:user_id/subscription', authMiddleware, subscriptionRoutes);
+// Stripe webhook must come before express.json() parses body — uses raw body
+app.use('/payment', stripeWebhookRouter);
+app.use('/users/:user_id/payment', authMiddleware, paymentRoutes);
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 app.use(errorHandler);
