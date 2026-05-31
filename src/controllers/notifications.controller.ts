@@ -3,7 +3,6 @@ import { z } from 'zod';
 import prisma from '../utils/prisma';
 import { AuthRequest } from '../middleware/auth';
 import { sendExpoPush } from '../utils/expoPush';
-import { Response } from 'express';
 
 const createSchema = z.object({
   type: z.enum(['reminder', 'summary', 'goal', 'streak', 'system']),

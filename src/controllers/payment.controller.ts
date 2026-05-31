@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import Razorpay from 'razorpay';
 import Stripe from 'stripe';
+type StripeInstance = InstanceType<typeof Stripe>;
 import crypto from 'crypto';
 import { AuthRequest } from '../middleware/auth';
 import prisma from '../utils/prisma';
@@ -15,9 +16,9 @@ if (process.env.RAZORPAY_KEY_ID && !process.env.RAZORPAY_KEY_ID.includes('REPLAC
   });
 }
 
-let stripe: Stripe | null = null;
+let stripe: StripeInstance | null = null;
 if (process.env.STRIPE_SECRET_KEY && !process.env.STRIPE_SECRET_KEY.includes('REPLACE_ME')) {
-  stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2025-04-30.basil' });
+  stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 }
 
 // ── Plan pricing ──────────────────────────────────────────────────────────────
@@ -164,7 +165,7 @@ export const stripeWebhook = async (req: Request, res: Response): Promise<void> 
   if (!stripe) { res.sendStatus(200); return; }
 
   const sig = req.headers['stripe-signature'] as string;
-  let event: Stripe.Event;
+  let event: ReturnType<StripeInstance['webhooks']['constructEvent']>;
 
   try {
     event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET!);
@@ -174,7 +175,7 @@ export const stripeWebhook = async (req: Request, res: Response): Promise<void> 
   }
 
   if (event.type === 'payment_intent.succeeded') {
-    const intent = event.data.object as Stripe.PaymentIntent;
+    const intent = event.data.object as { id: string; metadata: Record<string, string> };
     const { userId, plan } = intent.metadata;
     if (userId && plan) {
       await activateSubscription(userId, plan as 'monthly' | 'yearly', intent.id, 'stripe');
