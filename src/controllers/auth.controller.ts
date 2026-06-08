@@ -267,12 +267,11 @@ export const socialAuth = async (req: Request, res: Response): Promise<void> => 
       email = payload.email;
       name  = req.body.name ?? email?.split('@')[0] ?? '';
     } else {
-      // Google: verify access_token via userinfo endpoint
-      const res2 = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-        headers: { Authorization: `Bearer ${id_token}` },
-      });
+      // Google: verify id_token via tokeninfo endpoint (works for both iOS and Android clients)
+      const res2 = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${id_token}`);
       if (!res2.ok) throw new Error('Invalid Google token');
-      const payload = await res2.json() as { email?: string; name?: string };
+      const payload = await res2.json() as { email?: string; name?: string; aud?: string; error_description?: string };
+      if (payload.error_description) throw new Error(payload.error_description);
       email = payload.email;
       name  = payload.name ?? req.body.name ?? email?.split('@')[0] ?? '';
     }
