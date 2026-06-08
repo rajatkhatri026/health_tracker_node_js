@@ -1,10 +1,22 @@
 {
-  "$schema": "https://schema.railway.app/railway.schema.json",
+  "$schema": "https://railway.com/railway.schema.json",
   "build": {
-    "buildCommand": "npm run build"
+    "builder": "RAILPACK",
+    "buildCommand": "npm run build",
+    "buildEnvironment": "V3"
   },
   "deploy": {
+    "runtime": "V2",
+    "numReplicas": 1,
     "startCommand": "npm start",
+    "sleepApplication": false,
+    "useLegacyStacker": false,
+    "ipv6EgressEnabled": false,
+    "multiRegionConfig": {
+      "sfo": {
+        "numReplicas": 1
+      }
+    },
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10
   }
